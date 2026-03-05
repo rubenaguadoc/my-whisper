@@ -1,0 +1,33 @@
+{
+  "name": "my-whisper",
+  "version": "1.0.0",
+  "description": "Graba audio con el micrófono y transcribe con Whisper de OpenAI",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder"
+  },
+  "devDependencies": {
+    "electron": "^29.0.0",
+    "electron-builder": "^24.0.0"
+  },
+  "build": {
+    "appId": "com.mywhisper.app",
+    "productName": "MyWhisper",
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**/*"
+    ],
+    "win": {
+      "target": "portable",
+      "artifactName": "MyWhisper.exe"
+    },
+    "mac": {
+      "target": "dmg"
+    },
+    "linux": {
+      "target": "AppImage"
+    }
+  }
+}

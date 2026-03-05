@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+  <meta charset="UTF-8" />
+  <title>MyWhisper</title>
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      background: transparent;
+      width: 280px;
+      height: 44px;
+      overflow: hidden;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    /* Pastilla — se arrastra desde cualquier punto */
+    .pill {
+      width: 280px;
+      height: 44px;
+      background: rgba(15, 15, 15, 0.88);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-radius: 22px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.55);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      -webkit-app-region: drag;
+    }
+
+    /* Punto pulsante */
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #ef4444;
+      flex-shrink: 0;
+      -webkit-app-region: no-drag;
+    }
+
+    body.recording .dot {
+      animation: blink 1.1s ease-in-out infinite;
+    }
+
+    body.processing .dot {
+      background: #f59e0b;
+      animation: blink 0.55s ease-in-out infinite;
+    }
+
+    body.error .dot {
+      background: #f87171;
+      animation: none;
+    }
+
+    @keyframes blink {
+
+      0%,
+      100% {
+        opacity: 1;
+      }
+
+      50% {
+        opacity: 0.15;
+      }
+    }
+
+    /* Texto */
+    .label {
+      font-family: -apple-system, 'Segoe UI', sans-serif;
+      font-size: 13px;
+      font-weight: 500;
+      color: rgba(255, 255, 255, 0.9);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 160px;
+      pointer-events: none;
+    }
+
+    body.processing .label {
+      color: #f59e0b;
+    }
+
+    body.error .label {
+      color: #f87171;
+    }
+
+    /* Temporizador (solo al grabar) */
+    .timer {
+      font-family: 'Consolas', 'Menlo', monospace;
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.38);
+      min-width: 32px;
+      text-align: right;
+      pointer-events: none;
+    }
+
+    body:not(.recording) .timer {
+      display: none;
+    }
+  </style>
+</head>
+
+<body class="recording">
+  <div class="pill">
+    <div class="dot"></div>
+    <span class="label" id="label">Grabando…</span>
+    <span class="timer" id="timer">0:00</span>
+  </div>
+
+  <script>
+    let mediaRecorder = null;
+    let chunks = [];
+    let isRecording = false;
+    let discardOnStop = false;
+    let errorTimer = null;
+    let maxTimer = null;
+    let clockInterval = null;
+    let secondsElapsed = 0;
+
+    const MAX_RECORDING_MS = 10 * 60 * 1000;
+
+    const labelEl = document.getElementById('label');
+    const timerEl = document.getElementById('timer');
+
+    function setState(state, msg) {
+      document.body.className = state;
+      const labels = {
+        recording: 'Grabando\u2026',
+        processing: 'Procesando\u2026',
+        error: msg || 'Error',
+      };
+      labelEl.textContent = labels[state] ?? (msg || '');
+    }
+
+    function showError(msg) {
+      clearTimeout(errorTimer);
+      const short = msg.length > 36 ? msg.slice(0, 34) + '\u2026' : msg;
+      setState('error', short);
+      errorTimer = setTimeout(() => setState(''), 3500);
+    }
+
+    function startClock() {
+      secondsElapsed = 0;
+      timerEl.textContent = '0:00';
+      clockInterval = setInterval(() => {
+        secondsElapsed++;
+        const m = Math.floor(secondsElapsed / 60);
+        const s = String(secondsElapsed % 60).padStart(2, '0');
+        timerEl.textContent = `${m}:${s}`;
+      }, 1000);
+    }
+
+    function stopClock() {
+      clearInterval(clockInterval);
+      clockInterval = null;
+    }
+
+    async function startRecording() {
+      if (isRecording || document.body.classList.contains('processing')) return;
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        chunks = [];
+        discardOnStop = false;
+
+        const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+          ? 'audio/webm;codecs=opus'
+          : 'audio/webm';
+
+        mediaRecorder = new MediaRecorder(stream, { mimeType });
+        mediaRecorder.ondataavailable = (e) => {
+          if (e.data && e.data.size > 0) chunks.push(e.data);
+        };
+
+        mediaRecorder.onstop = async () => {
+          stream.getTracks().forEach((t) => t.stop());
+          stopClock();
+          if (discardOnStop) { discardOnStop = false; chunks = []; return; }
+          setState('processing');
+          try {
+            const blob = new Blob(chunks, { type: mimeType });
+            const text = await window.api.transcribe(new Uint8Array(await blob.arrayBuffer()));
+            if (text && text.trim()) {
+              setState('');
+              window.api.showResult(text.trim());
+            } else {
+              showError('No se detect\u00f3 texto');
+            }
+          } catch (err) {
+            showError(err.message || 'Error desconocido');
+          }
+        };
+
+        mediaRecorder.start();
+        isRecording = true;
+        setState('recording');
+        startClock();
+        maxTimer = setTimeout(() => { if (isRecording) stopRecording(); }, MAX_RECORDING_MS);
+
+      } catch (err) {
+        showError('Micro: ' + (err.message || 'acceso denegado'));
+      }
+    }
+
+    function stopRecording() {
+      if (!isRecording) return;
+      clearTimeout(maxTimer);
+      isRecording = false;
+      if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+    }
+
+    function cancelRecording() {
+      if (!isRecording) return;
+      discardOnStop = true;
+      clearTimeout(maxTimer);
+      isRecording = false;
+      stopClock();
+      if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+    }
+
+    function toggleRecording() {
+      if (document.body.classList.contains('processing')) return;
+      if (isRecording) stopRecording();
+      else startRecording();
+    }
+
+    window.api.onTriggerRecording(toggleRecording);
+
+    window.api.onTriggerEscape(() => {
+      if (isRecording) {
+        cancelRecording();
+        window.api.hideOverlay();
+      } else if (!document.body.classList.contains('processing')) {
+        window.api.hideOverlay();
+      }
+    });
+  </script>
+</body>
+
+</html>

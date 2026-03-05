@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'">
+  <title>Configuración — MyWhisper</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, 'Segoe UI', sans-serif;
+      background: #161616;
+      color: #e8e8e8;
+      padding: 28px;
+      display: flex;
+      flex-direction: column;
+      gap: 22px;
+      height: 100vh;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    header svg {
+      width: 20px;
+      height: 20px;
+      color: #3b82f6;
+    }
+
+    h1 {
+      font-size: 16px;
+      font-weight: 600;
+      color: #fff;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    label {
+      font-size: 13px;
+      color: rgba(255, 255, 255, 0.55);
+    }
+
+    .input-row {
+      display: flex;
+      gap: 8px;
+    }
+
+    input {
+      flex: 1;
+      background: #222;
+      border: 1.5px solid #333;
+      border-radius: 8px;
+      color: #e8e8e8;
+      font-size: 14px;
+      font-family: 'Consolas', 'Menlo', monospace;
+      padding: 10px 14px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    input:focus {
+      border-color: #3b82f6;
+    }
+
+    input::placeholder {
+      color: rgba(255, 255, 255, 0.25);
+    }
+
+    .btn-toggle {
+      background: #2a2a2a;
+      border: 1.5px solid #333;
+      border-radius: 8px;
+      color: rgba(255, 255, 255, 0.55);
+      font-size: 12px;
+      padding: 0 12px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.15s;
+    }
+
+    .btn-toggle:hover {
+      background: #353535;
+    }
+
+    .hint {
+      font-size: 11.5px;
+      color: rgba(255, 255, 255, 0.28);
+    }
+
+    footer {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: auto;
+    }
+
+    .status-msg {
+      font-size: 13px;
+      min-height: 18px;
+      margin-right: auto;
+      transition: opacity 0.25s;
+    }
+
+    .status-msg.ok {
+      color: #22c55e;
+    }
+
+    .status-msg.error {
+      color: #f87171;
+    }
+
+    button.btn-save {
+      padding: 9px 24px;
+      border-radius: 8px;
+      border: none;
+      font-size: 14px;
+      font-family: inherit;
+      font-weight: 500;
+      cursor: pointer;
+      background: #3b82f6;
+      color: #fff;
+      transition: background 0.15s, transform 0.1s;
+    }
+
+    button.btn-save:hover {
+      background: #2563eb;
+    }
+
+    button.btn-save:active {
+      transform: scale(0.96);
+    }
+  </style>
+</head>
+
+<body>
+  <header>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+      stroke-linejoin="round">
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06
+               a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09
+               A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83
+               l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09
+               A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83
+               l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09
+               a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83
+               l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09
+               a1.65 1.65 0 0 0-1.51 1z" />
+    </svg>
+    <h1>Configuración</h1>
+  </header>
+
+  <div class="field">
+    <label for="apiKeyInput">OpenAI API Key</label>
+    <div class="input-row">
+      <input type="password" id="apiKeyInput" placeholder="sk-..." autocomplete="off" spellcheck="false" />
+      <button class="btn-toggle" id="btnToggle">Mostrar</button>
+    </div>
+    <span class="hint">Se guarda en tu perfil local. Nunca sale de este ordenador.</span>
+  </div>
+
+  <footer>
+    <span class="status-msg" id="statusMsg"></span>
+    <button class="btn-save" id="btnSave">Guardar</button>
+  </footer>
+
+  <script>
+    const apiKeyInput = document.getElementById('apiKeyInput');
+    const btnSave = document.getElementById('btnSave');
+    const btnToggle = document.getElementById('btnToggle');
+    const statusMsg = document.getElementById('statusMsg');
+
+    let statusTimer = null;
+
+    function showStatus(text, type) {
+      statusMsg.textContent = text;
+      statusMsg.className = `status-msg ${type}`;
+      clearTimeout(statusTimer);
+      statusTimer = setTimeout(() => {
+        statusMsg.textContent = '';
+        statusMsg.className = 'status-msg';
+      }, 3000);
+    }
+
+    // Cargar la clave existente
+    window.api.getApiKey().then((key) => {
+      if (key) apiKeyInput.value = key;
+    });
+
+    // Mostrar / ocultar la clave
+    btnToggle.addEventListener('click', () => {
+      const hidden = apiKeyInput.type === 'password';
+      apiKeyInput.type = hidden ? 'text' : 'password';
+      btnToggle.textContent = hidden ? 'Ocultar' : 'Mostrar';
+    });
+
+    // Guardar
+    async function save() {
+      const key = apiKeyInput.value.trim();
+      if (!key) {
+        showStatus('Introduce tu API key de OpenAI.', 'error');
+        return;
+      }
+      if (!key.startsWith('sk-')) {
+        showStatus('La key debe empezar por "sk-".', 'error');
+        return;
+      }
+      await window.api.saveApiKey(key);
+      showStatus('¡Guardado correctamente!', 'ok');
+      setTimeout(() => window.close(), 1200);
+    }
+
+    btnSave.addEventListener('click', save);
+    apiKeyInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') save();
+    });
+  </script>
+</body>
+
+</html>

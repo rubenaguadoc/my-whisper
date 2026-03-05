@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'">
+  <title>Transcripción</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, 'Segoe UI', sans-serif;
+      background: #161616;
+      color: #e8e8e8;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      padding: 24px;
+      gap: 16px;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    header svg {
+      width: 20px;
+      height: 20px;
+      flex-shrink: 0;
+      color: #3b82f6;
+    }
+
+    h1 {
+      font-size: 16px;
+      font-weight: 600;
+      color: #fff;
+    }
+
+    textarea {
+      flex: 1;
+      background: #222;
+      border: 1.5px solid #333;
+      border-radius: 10px;
+      color: #e8e8e8;
+      font-size: 15px;
+      font-family: inherit;
+      line-height: 1.65;
+      padding: 14px 16px;
+      resize: none;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    textarea:focus {
+      border-color: #3b82f6;
+    }
+
+    footer {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .copied-msg {
+      font-size: 13px;
+      color: #22c55e;
+      opacity: 0;
+      transition: opacity 0.25s;
+      margin-right: auto;
+    }
+
+    .copied-msg.visible {
+      opacity: 1;
+    }
+
+    button {
+      padding: 9px 22px;
+      border-radius: 8px;
+      border: none;
+      font-size: 14px;
+      font-family: inherit;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s, transform 0.1s;
+    }
+
+    button:active {
+      transform: scale(0.96);
+    }
+
+    .btn-copy {
+      background: #3b82f6;
+      color: #fff;
+    }
+
+    .btn-copy:hover {
+      background: #2563eb;
+    }
+
+    .btn-close {
+      background: #2e2e2e;
+      color: #e8e8e8;
+    }
+
+    .btn-close:hover {
+      background: #3a3a3a;
+    }
+  </style>
+</head>
+
+<body>
+  <header>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+      stroke-linejoin="round">
+      <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+      <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+      <line x1="12" y1="19" x2="12" y2="23" />
+      <line x1="8" y1="23" x2="16" y2="23" />
+    </svg>
+    <h1>Transcripción</h1>
+  </header>
+
+  <textarea id="result" readonly spellcheck="false"></textarea>
+
+  <footer>
+    <span class="copied-msg" id="copiedMsg">¡Copiado al portapapeles!</span>
+    <button class="btn-copy" id="btnCopy">Copiar</button>
+    <button class="btn-close" id="btnClose">Cerrar</button>
+  </footer>
+
+  <script>
+    const resultArea = document.getElementById('result');
+    const btnCopy = document.getElementById('btnCopy');
+    const btnClose = document.getElementById('btnClose');
+    const copiedMsg = document.getElementById('copiedMsg');
+    let copiedTimer = null;
+
+    // Recibir el texto de transcripción desde el proceso principal
+    window.api.onTranscriptionText((text) => {
+      resultArea.value = text;
+      // Seleccionar todo el texto automáticamente
+      resultArea.focus();
+      resultArea.select();
+    });
+
+    btnCopy.addEventListener('click', () => {
+      window.api.copyToClipboard(resultArea.value);
+      resultArea.select();
+      copiedMsg.classList.add('visible');
+      clearTimeout(copiedTimer);
+      copiedTimer = setTimeout(() => copiedMsg.classList.remove('visible'), 2200);
+    });
+
+    btnClose.addEventListener('click', () => window.close());
+
+    // Ctrl+A selecciona todo
+    resultArea.addEventListener('keydown', (e) => {
+      if (e.key === 'a' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        resultArea.select();
+      }
+    });
+  </script>
+</body>
+
+</html>
