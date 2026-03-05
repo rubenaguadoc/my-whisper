@@ -180,6 +180,16 @@ function createOverlay() {
     }
   });
 
+  // Registrar Escape solo mientras el overlay está visible (grabando)
+  overlayWin.on('show', () => {
+    globalShortcut.register('Escape', () => {
+      overlayWin.webContents.send('trigger-escape');
+    });
+  });
+  overlayWin.on('hide', () => {
+    globalShortcut.unregister('Escape');
+  });
+
   // Primera carga: mostrar y arrancar grabación automáticamente
   overlayWin.once('ready-to-show', () => {
     overlayWin.show();
@@ -252,13 +262,6 @@ app.whenReady().then(() => {
 
   // Ctrl+F1 → mostrar overlay y toggle grabación
   globalShortcut.register('Ctrl+F1', toggleOverlayAndRecord);
-
-  // Escape → cancelar/ocultar overlay (sólo si está visible)
-  globalShortcut.register('Escape', () => {
-    if (overlayWin && overlayWin.isVisible()) {
-      overlayWin.webContents.send('trigger-escape');
-    }
-  });
 });
 
 app.on('before-quit', () => {
