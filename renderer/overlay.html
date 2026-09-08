@@ -15,7 +15,7 @@
 
     body {
       background: transparent;
-      width: 280px;
+      width: 320px;
       height: 44px;
       overflow: hidden;
       user-select: none;
@@ -24,7 +24,7 @@
 
     /* Pastilla — se arrastra desde cualquier punto */
     .pill {
-      width: 280px;
+      width: 320px;
       height: 44px;
       background: rgba(15, 15, 15, 0.88);
       backdrop-filter: blur(12px);
@@ -96,6 +96,44 @@
       color: #f87171;
     }
 
+    /* Medidor de nivel — confirma de un vistazo que entra audio */
+    .meter {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      height: 20px;
+      pointer-events: none;
+    }
+
+    .meter i {
+      width: 3px;
+      height: 20px;
+      border-radius: 2px;
+      background: #ef4444;
+      transform: scaleY(0.12);
+      transition: transform 0.06s linear;
+    }
+
+    body:not(.recording) .meter {
+      display: none;
+    }
+
+    /* Transcripciones aún sin entregar */
+    .badge {
+      font-family: -apple-system, 'Segoe UI', sans-serif;
+      font-size: 11px;
+      font-weight: 600;
+      color: #0f0f0f;
+      background: #f59e0b;
+      border-radius: 9px;
+      padding: 2px 7px;
+      pointer-events: none;
+    }
+
+    .badge.hidden {
+      display: none;
+    }
+
     /* Temporizador (solo al grabar) */
     .timer {
       font-family: 'Consolas', 'Menlo', monospace;
@@ -116,39 +154,113 @@
   <div class="pill">
     <div class="dot"></div>
     <span class="label" id="label">Grabando…</span>
+    <div class="meter" id="meter">
+      <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+    </div>
     <span class="timer" id="timer">0:00</span>
+    <span class="badge hidden" id="badge">0</span>
   </div>
 
   <script>
     let mediaRecorder = null;
-    let chunks = [];
     let isRecording = false;
+    let isStarting = false;
     let discardOnStop = false;
+    let errorMsg = '';
     let errorTimer = null;
     let maxTimer = null;
     let clockInterval = null;
     let secondsElapsed = 0;
+    let lastVisible = null;
 
     const MAX_RECORDING_MS = 10 * 60 * 1000;
+    // Opus mono: transparente para voz y ~4x menos de subida que el default
+    const AUDIO_BITRATE = 32000;
 
     const labelEl = document.getElementById('label');
     const timerEl = document.getElementById('timer');
+    const badgeEl = document.getElementById('badge');
+    const meterEl = document.getElementById('meter');
+    const bars = Array.from(meterEl.children);
 
-    function setState(state, msg) {
+    // ── Cola de transcripciones ────────────────────────────────────────────
+    // Las peticiones salen en paralelo, pero los textos se entregan en el
+    // orden en que se grabaron.
+    const jobs = new Map();
+    let nextSeq = 0;
+    let nextToDeliver = 0;
+
+    function enqueueJob(blob) {
+      const seq = nextSeq++;
+      jobs.set(seq, { status: 'pending' });
+
+      (async () => {
+        try {
+          const bytes = new Uint8Array(await blob.arrayBuffer());
+          const text = await window.api.transcribe(bytes);
+          jobs.set(seq, { status: 'done', text: (text || '').trim() });
+        } catch (err) {
+          jobs.set(seq, {
+            status: 'error',
+            error: err && err.message ? err.message : 'Error desconocido',
+          });
+        }
+        flushDeliveries();
+        render();
+      })();
+
+      render();
+    }
+
+    function flushDeliveries() {
+      while (jobs.has(nextToDeliver)) {
+        const job = jobs.get(nextToDeliver);
+        if (job.status === 'pending') break;
+        jobs.delete(nextToDeliver);
+        nextToDeliver++;
+
+        if (job.status === 'error') showError(job.error);
+        else if (job.text) window.api.showResult(job.text);
+        else showError('No se detect\u00f3 texto');
+      }
+    }
+
+    // ── Estado visual ──────────────────────────────────────────────────────
+    function render() {
+      const pending = jobs.size;
+
+      let state = '';
+      if (isRecording) state = 'recording';
+      else if (errorMsg) state = 'error';
+      else if (pending) state = 'processing';
       document.body.className = state;
-      const labels = {
-        recording: 'Grabando\u2026',
-        processing: 'Procesando\u2026',
-        error: msg || 'Error',
-      };
-      labelEl.textContent = labels[state] ?? (msg || '');
+
+      if (isRecording) labelEl.textContent = 'Grabando\u2026';
+      else if (errorMsg) labelEl.textContent = errorMsg;
+      else if (pending)
+        labelEl.textContent =
+          pending > 1 ? `Procesando ${pending}\u2026` : 'Procesando\u2026';
+      else labelEl.textContent = '';
+
+      // Durante la grabación el contador es la única pista de lo que hay en vuelo
+      badgeEl.textContent = String(pending);
+      badgeEl.classList.toggle('hidden', !(isRecording && pending));
+
+      const visible = isRecording || pending > 0 || !!errorMsg;
+      if (visible !== lastVisible) {
+        lastVisible = visible;
+        window.api.setOverlayVisible(visible);
+      }
     }
 
     function showError(msg) {
       clearTimeout(errorTimer);
-      const short = msg.length > 36 ? msg.slice(0, 34) + '\u2026' : msg;
-      setState('error', short);
-      errorTimer = setTimeout(() => setState(''), 3500);
+      errorMsg = msg.length > 40 ? msg.slice(0, 38) + '\u2026' : msg;
+      render();
+      errorTimer = setTimeout(() => {
+        errorMsg = '';
+        render();
+      }, 6000);
     }
 
     function startClock() {
@@ -167,49 +279,131 @@
       clockInterval = null;
     }
 
-    async function startRecording() {
-      if (isRecording || document.body.classList.contains('processing')) return;
+    // ── Medidor de nivel ───────────────────────────────────────────────────
+    let audioCtx = null;
+    let sourceNode = null;
+    let meterRaf = null;
+
+    function startMeter(stream) {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        chunks = [];
-        discardOnStop = false;
+        audioCtx = new AudioContext();
+        // El disparo viene de un atajo global, no de un gesto en la página:
+        // sin esto el contexto puede quedarse suspendido y medir siempre cero
+        if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => { });
+        sourceNode = audioCtx.createMediaStreamSource(stream);
+        const analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 256;
+        analyser.smoothingTimeConstant = 0.6;
+        sourceNode.connect(analyser); // sin conectar a destination: nada de retorno
+
+        const data = new Uint8Array(analyser.frequencyBinCount);
+        // Las primeras bandas concentran la voz; el resto aporta poco
+        const bandSize = Math.floor(48 / bars.length);
+
+        const tick = () => {
+          analyser.getByteFrequencyData(data);
+          for (let i = 0; i < bars.length; i++) {
+            let sum = 0;
+            for (let j = 0; j < bandSize; j++) sum += data[i * bandSize + j];
+            const level = sum / bandSize / 255;
+            bars[i].style.transform = `scaleY(${Math.max(0.12, Math.min(1, level * 1.8))})`;
+          }
+          meterRaf = requestAnimationFrame(tick);
+        };
+        tick();
+      } catch (_) {
+        /* sin medidor, la grabación sigue funcionando */
+      }
+    }
+
+    function stopMeter() {
+      if (meterRaf) cancelAnimationFrame(meterRaf);
+      meterRaf = null;
+      if (sourceNode) sourceNode.disconnect();
+      if (audioCtx) audioCtx.close();
+      sourceNode = null;
+      audioCtx = null;
+      bars.forEach((b) => (b.style.transform = 'scaleY(0.12)'));
+    }
+
+    // ── Rearme del micro ───────────────────────────────────────────────────
+    // Tras hibernar, la primera captura sale corrupta (sample rate desfasado).
+    // Abrir y cerrar el dispositivo una vez fuerza a Windows a reinicializarlo.
+    let warmupPromise = null;
+
+    function warmUpMic() {
+      if (warmupPromise || isRecording || isStarting) return warmupPromise;
+      warmupPromise = (async () => {
+        try {
+          await navigator.mediaDevices.enumerateDevices();
+          const stream = await navigator.mediaDevices.getUserMedia({
+            audio: { channelCount: 1 },
+          });
+          await new Promise((r) => setTimeout(r, 500));
+          stream.getTracks().forEach((t) => t.stop());
+          await new Promise((r) => setTimeout(r, 150));
+        } catch (_) {
+          /* si el micro no está disponible, ya avisará la grabación real */
+        } finally {
+          warmupPromise = null;
+        }
+      })();
+      return warmupPromise;
+    }
+
+    // ── Grabación ──────────────────────────────────────────────────────────
+    async function startRecording() {
+      if (isRecording || isStarting) return;
+      isStarting = true;
+      try {
+        if (warmupPromise) await warmupPromise;
+
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: { channelCount: 1 },
+        });
 
         const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
           ? 'audio/webm;codecs=opus'
           : 'audio/webm';
 
-        mediaRecorder = new MediaRecorder(stream, { mimeType });
+        const chunks = [];
+        discardOnStop = false;
+
+        mediaRecorder = new MediaRecorder(stream, {
+          mimeType,
+          audioBitsPerSecond: AUDIO_BITRATE,
+        });
+
         mediaRecorder.ondataavailable = (e) => {
           if (e.data && e.data.size > 0) chunks.push(e.data);
         };
 
-        mediaRecorder.onstop = async () => {
+        mediaRecorder.onstop = () => {
           stream.getTracks().forEach((t) => t.stop());
+          stopMeter();
           stopClock();
-          if (discardOnStop) { discardOnStop = false; chunks = []; return; }
-          setState('processing');
-          try {
-            const blob = new Blob(chunks, { type: mimeType });
-            const text = await window.api.transcribe(new Uint8Array(await blob.arrayBuffer()));
-            if (text && text.trim()) {
-              setState('');
-              window.api.showResult(text.trim());
-            } else {
-              showError('No se detect\u00f3 texto');
-            }
-          } catch (err) {
-            showError(err.message || 'Error desconocido');
+          if (discardOnStop) {
+            discardOnStop = false;
+            render();
+            return;
           }
+          enqueueJob(new Blob(chunks, { type: mimeType }));
         };
 
         mediaRecorder.start();
         isRecording = true;
-        setState('recording');
+        errorMsg = '';
+        clearTimeout(errorTimer);
+        render();
         startClock();
-        maxTimer = setTimeout(() => { if (isRecording) stopRecording(); }, MAX_RECORDING_MS);
-
+        startMeter(stream);
+        maxTimer = setTimeout(() => {
+          if (isRecording) stopRecording();
+        }, MAX_RECORDING_MS);
       } catch (err) {
-        showError('Micro: ' + (err.message || 'acceso denegado'));
+        showError('Micro: ' + ((err && err.message) || 'acceso denegado'));
+      } finally {
+        isStarting = false;
       }
     }
 
@@ -217,7 +411,9 @@
       if (!isRecording) return;
       clearTimeout(maxTimer);
       isRecording = false;
-      if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+      if (mediaRecorder && mediaRecorder.state !== 'inactive')
+        mediaRecorder.stop();
+      render();
     }
 
     function cancelRecording() {
@@ -225,26 +421,30 @@
       discardOnStop = true;
       clearTimeout(maxTimer);
       isRecording = false;
-      stopClock();
-      if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+      if (mediaRecorder && mediaRecorder.state !== 'inactive')
+        mediaRecorder.stop();
+      render();
     }
 
     function toggleRecording() {
-      if (document.body.classList.contains('processing')) return;
       if (isRecording) stopRecording();
       else startRecording();
     }
 
     window.api.onTriggerRecording(toggleRecording);
+    window.api.onWarmupMic(warmUpMic);
 
     window.api.onTriggerEscape(() => {
       if (isRecording) {
         cancelRecording();
-        window.api.hideOverlay();
-      } else if (!document.body.classList.contains('processing')) {
-        window.api.hideOverlay();
+        return;
       }
+      clearTimeout(errorTimer);
+      errorMsg = '';
+      render();
     });
+
+    render();
   </script>
 </body>
 

@@ -144,10 +144,12 @@
 
     // Recibir el texto de transcripción desde el proceso principal
     window.api.onTranscriptionText((text) => {
-      resultArea.value = text;
-      // Seleccionar todo el texto automáticamente
+      resultArea.value = resultArea.value
+        ? resultArea.value + '\n\n' + text
+        : text;
       resultArea.focus();
       resultArea.select();
+      resultArea.scrollTop = resultArea.scrollHeight;
     });
 
     btnCopy.addEventListener('click', () => {

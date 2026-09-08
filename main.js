@@ -8,6 +8,7 @@ const {
   Menu,
   Tray,
   nativeImage,
+  powerMonitor,
 } = require('electron');
 const path = require('path');
 const fs = require('fs');
@@ -39,7 +40,10 @@ function writeConfig(data) {
 }
 
 let overlayWin = null;
+let overlayReady = false;
+let pendingRecordTrigger = false;
 let resultWin = null;
+let resultPending = [];
 let settingsWin = null;
 let tray = null;
 let isQuitting = false;
@@ -135,22 +139,26 @@ function rebuildTrayMenu() {
 }
 
 function toggleOverlayAndRecord() {
-  if (!overlayWin) {
-    // Primera vez: crear overlay; se autoinicia la grabación en ready-to-show
-    createOverlay();
-  } else if (!overlayWin.isVisible()) {
-    // Existe pero oculto: mostrar y arrancar
-    overlayWin.show();
-    overlayWin.webContents.send('trigger-recording');
-  } else {
-    // Visible y grabando: parar (transcribir y ocultar)
-    overlayWin.webContents.send('trigger-recording');
+  ensureOverlay();
+  if (!overlayReady) {
+    pendingRecordTrigger = true;
+    return;
   }
+  if (!overlayWin.isVisible()) overlayWin.showInactive();
+  overlayWin.webContents.send('trigger-recording');
 }
 
-function createOverlay() {
+// Pide al renderer que abra y cierre el micro para forzar a Windows a
+// reinicializar el dispositivo (tras hibernar suele quedarse en mal estado)
+function warmUpMic() {
+  if (overlayWin && overlayReady) overlayWin.webContents.send('warmup-mic');
+}
+
+function ensureOverlay() {
+  if (overlayWin) return overlayWin;
+
   const { width } = screen.getPrimaryDisplay().workAreaSize;
-  const W = 280,
+  const W = 320,
     H = 44;
 
   overlayWin = new BrowserWindow({
@@ -165,6 +173,8 @@ function createOverlay() {
     skipTaskbar: true,
     hasShadow: false,
     show: false,
+    // Nunca roba el foco: permite dejarlo visible mientras se pega el texto
+    focusable: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -180,7 +190,7 @@ function createOverlay() {
     }
   });
 
-  // Registrar Escape solo mientras el overlay está visible (grabando)
+  // Registrar Escape solo mientras el overlay está visible
   overlayWin.on('show', () => {
     globalShortcut.register('Escape', () => {
       overlayWin.webContents.send('trigger-escape');
@@ -190,21 +200,38 @@ function createOverlay() {
     globalShortcut.unregister('Escape');
   });
 
-  // Primera carga: mostrar y arrancar grabación automáticamente
-  overlayWin.once('ready-to-show', () => {
-    overlayWin.show();
-    setTimeout(() => overlayWin.webContents.send('trigger-recording'), 300);
+  overlayWin.webContents.once('did-finish-load', () => {
+    overlayReady = true;
+    warmUpMic();
+    if (pendingRecordTrigger) {
+      pendingRecordTrigger = false;
+      overlayWin.showInactive();
+      overlayWin.webContents.send('trigger-recording');
+    }
   });
 
   overlayWin.loadFile(path.join(__dirname, 'renderer', 'overlay.html'));
+  return overlayWin;
 }
 
-function createResultWindow(text) {
-  if (resultWin) {
-    resultWin.close();
-    resultWin = null;
+// Varias transcripciones pueden llegar seguidas: se acumulan en la misma ventana
+function appendToResultWindow(text) {
+  resultPending.push(text);
+  if (!resultWin) {
+    createResultWindow();
+    return;
   }
+  if (!resultWin.webContents.isLoading()) flushResultTexts();
+}
 
+function flushResultTexts() {
+  if (!resultWin || resultWin.isDestroyed()) return;
+  const items = resultPending;
+  resultPending = [];
+  for (const t of items) resultWin.webContents.send('transcription-text', t);
+}
+
+function createResultWindow() {
   resultWin = new BrowserWindow({
     width: 540,
     height: 400,
@@ -219,9 +246,7 @@ function createResultWindow(text) {
   });
 
   resultWin.loadFile(path.join(__dirname, 'renderer', 'result.html'));
-  resultWin.webContents.on('did-finish-load', () => {
-    resultWin.webContents.send('transcription-text', text);
-  });
+  resultWin.webContents.on('did-finish-load', flushResultTexts);
   resultWin.on('closed', () => {
     resultWin = null;
   });
@@ -259,6 +284,14 @@ app.whenReady().then(() => {
   const config = readConfig();
   autoPaste = !!config.autoPaste;
   if (!config.apiKey) setTimeout(createSettingsWindow, 400);
+
+  // Crear el overlay oculto ya: la primera grabación arranca sin esperas
+  // y permite rearmar el micro aunque no se haya grabado nada todavía
+  ensureOverlay();
+
+  // Tras hibernar/suspender, el micro USB suele quedarse en mal estado
+  powerMonitor.on('resume', warmUpMic);
+  powerMonitor.on('unlock-screen', warmUpMic);
 
   // Ctrl+F1 → mostrar overlay y toggle grabación
   globalShortcut.register('Ctrl+F1', toggleOverlayAndRecord);
@@ -329,13 +362,26 @@ ipcMain.handle('transcribe', async (_, audioBuffer) => {
   return data.text || '';
 });
 
+// Los resultados pueden llegar en ráfaga: se entregan de uno en uno para que
+// dos Ctrl+V consecutivos no se pisen
+let deliveryChain = Promise.resolve();
+
 ipcMain.on('show-result', (_, text) => {
-  if (autoPaste) {
-    // 1) Copiar al portapapeles
-    clipboard.writeText(String(text));
-    // 2) Ocultar overlay para que la ventana anterior recupere el foco
-    if (overlayWin) overlayWin.hide();
-    // 3) Esperar a que el SO transfiera el foco y simular Ctrl+V
+  const value = String(text);
+  deliveryChain = deliveryChain
+    .then(() => deliverResult(value))
+    .catch(() => {});
+});
+
+function deliverResult(text) {
+  if (!autoPaste) {
+    appendToResultWindow(text);
+    return Promise.resolve();
+  }
+
+  clipboard.writeText(text);
+  return new Promise((resolve) => {
+    // Margen para que el SO haya devuelto el foco a la ventana anterior
     setTimeout(() => {
       spawn(
         'powershell.exe',
@@ -347,10 +393,17 @@ ipcMain.on('show-result', (_, text) => {
         ],
         { windowsHide: true },
       );
+      setTimeout(resolve, 400);
     }, 250);
-  } else {
-    if (overlayWin) overlayWin.hide();
-    createResultWindow(text);
+  });
+}
+
+ipcMain.on('set-overlay-visible', (_, visible) => {
+  if (!overlayWin) return;
+  if (visible) {
+    if (!overlayWin.isVisible()) overlayWin.showInactive();
+  } else if (overlayWin.isVisible()) {
+    overlayWin.hide();
   }
 });
 

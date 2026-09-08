@@ -12,6 +12,8 @@ contextBridge.exposeInMainWorld('api', {
   showResult: (text) => ipcRenderer.send('show-result', text),
   openSettings: () => ipcRenderer.send('open-settings'),
   hideOverlay: () => ipcRenderer.send('hide-overlay'),
+  setOverlayVisible: (visible) =>
+    ipcRenderer.send('set-overlay-visible', visible),
   copyToClipboard: (text) => ipcRenderer.send('copy-to-clipboard', text),
   quitApp: () => ipcRenderer.send('quit-app'),
 
@@ -28,5 +30,10 @@ contextBridge.exposeInMainWorld('api', {
   // Escape: cancelar grabación o cerrar app
   onTriggerEscape: (callback) => {
     ipcRenderer.on('trigger-escape', () => callback());
+  },
+
+  // Reinicializar el micro (arranque y vuelta de suspensión/hibernación)
+  onWarmupMic: (callback) => {
+    ipcRenderer.on('warmup-mic', () => callback());
   },
 });
