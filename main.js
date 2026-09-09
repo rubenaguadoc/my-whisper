@@ -138,13 +138,29 @@ function rebuildTrayMenu() {
   tray.setContextMenu(menu);
 }
 
+// Windows pierde el flag de "siempre encima" al recomponer el escritorio
+// (hibernación, bloqueo de sesión, cambio de monitores). Reactivarlo requiere
+// apagarlo y volverlo a encender: un setAlwaysOnTop(true) suelto no hace nada
+// si Electron ya cree que está activo.
+function raiseOverlay() {
+  if (!overlayWin || overlayWin.isDestroyed()) return;
+  overlayWin.setAlwaysOnTop(false);
+  overlayWin.setAlwaysOnTop(true, 'screen-saver');
+  if (overlayWin.isVisible()) overlayWin.moveTop();
+}
+
+function showOverlay() {
+  if (!overlayWin.isVisible()) overlayWin.showInactive();
+  raiseOverlay();
+}
+
 function toggleOverlayAndRecord() {
   ensureOverlay();
   if (!overlayReady) {
     pendingRecordTrigger = true;
     return;
   }
-  if (!overlayWin.isVisible()) overlayWin.showInactive();
+  showOverlay();
   overlayWin.webContents.send('trigger-recording');
 }
 
@@ -202,10 +218,11 @@ function ensureOverlay() {
 
   overlayWin.webContents.once('did-finish-load', () => {
     overlayReady = true;
+    raiseOverlay();
     warmUpMic();
     if (pendingRecordTrigger) {
       pendingRecordTrigger = false;
-      overlayWin.showInactive();
+      showOverlay();
       overlayWin.webContents.send('trigger-recording');
     }
   });
@@ -290,8 +307,19 @@ app.whenReady().then(() => {
   ensureOverlay();
 
   // Tras hibernar/suspender, el micro USB suele quedarse en mal estado
-  powerMonitor.on('resume', warmUpMic);
-  powerMonitor.on('unlock-screen', warmUpMic);
+  powerMonitor.on('resume', () => {
+    raiseOverlay();
+    warmUpMic();
+  });
+  powerMonitor.on('unlock-screen', () => {
+    raiseOverlay();
+    warmUpMic();
+  });
+
+  // Conectar/desconectar monitores también tumba el "siempre encima"
+  screen.on('display-added', raiseOverlay);
+  screen.on('display-removed', raiseOverlay);
+  screen.on('display-metrics-changed', raiseOverlay);
 
   // Ctrl+F1 → mostrar overlay y toggle grabación
   globalShortcut.register('Ctrl+F1', toggleOverlayAndRecord);
@@ -401,7 +429,7 @@ function deliverResult(text) {
 ipcMain.on('set-overlay-visible', (_, visible) => {
   if (!overlayWin) return;
   if (visible) {
-    if (!overlayWin.isVisible()) overlayWin.showInactive();
+    showOverlay();
   } else if (overlayWin.isVisible()) {
     overlayWin.hide();
   }
