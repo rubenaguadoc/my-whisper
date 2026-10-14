@@ -366,8 +366,9 @@ ipcMain.handle('transcribe', async (_, audioBuffer) => {
 
   const formData = new FormData();
   formData.append('file', blob, 'audio.webm');
-  formData.append('model', 'gpt-4o-transcribe');
-  formData.append('language', 'es');
+  formData.append('model', 'gpt-transcribe');
+  // gpt-transcribe usa `languages[]` (plural); el antiguo `language` no vale
+  formData.append('languages[]', 'es');
 
   const response = await fetch(
     'https://api.openai.com/v1/audio/transcriptions',

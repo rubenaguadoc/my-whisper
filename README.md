@@ -55,10 +55,10 @@ Genera un archivo `MyWhisper.exe` portable en la carpeta `dist/`. No requiere in
 
 ## Atajos de teclado
 
-| Atajo | Acción |
-|---|---|
-| **Ctrl+F1** | Iniciar / detener grabación |
-| **Escape** | Cancelar grabación (descarta el audio) u ocultar el overlay |
+| Atajo       | Acción                                                      |
+| ----------- | ----------------------------------------------------------- |
+| **Ctrl+F1** | Iniciar / detener grabación                                 |
+| **Escape**  | Cancelar grabación (descarta el audio) u ocultar el overlay |
 
 Funcionan globalmente desde cualquier aplicación, sin necesidad de tener MyWhisper en primer plano.
 
@@ -66,12 +66,12 @@ Funcionan globalmente desde cualquier aplicación, sin necesidad de tener MyWhis
 
 ## Menú del tray (clic derecho sobre el icono)
 
-| Opción | Descripción |
-|---|---|
-| Grabar / Parar | Mismo efecto que Ctrl+F1 |
+| Opción                | Descripción                                |
+| --------------------- | ------------------------------------------ |
+| Grabar / Parar        | Mismo efecto que Ctrl+F1                   |
 | Pegar automáticamente | Activa/desactiva el modo de pegado directo |
-| Configuración | Abre la ventana para cambiar la API Key |
-| Salir | Cierra la aplicación |
+| Configuración         | Abre la ventana para cambiar la API Key    |
+| Salir                 | Cierra la aplicación                       |
 
 ---
 
@@ -103,7 +103,7 @@ renderer/
   settings.html  →  Formulario para introducir y guardar la API Key.
 ```
 
-El audio se procesa completamente en memoria (nunca se escribe en disco) y se envía directamente a `https://api.openai.com/v1/audio/transcriptions` con el modelo `gpt-4o-transcribe` y el idioma fijado a español (`language: es`).
+El audio se procesa completamente en memoria (nunca se escribe en disco) y se envía directamente a `https://api.openai.com/v1/audio/transcriptions` con el modelo `gpt-transcribe` y el idioma fijado a español (`languages[]: es`).
 
 La grabación se corta automáticamente a los **10 minutos** como medida de seguridad, para no superar el límite de tamaño de fichero de la API de OpenAI (~25 MB).
 
