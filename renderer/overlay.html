@@ -88,8 +88,17 @@
       pointer-events: none;
     }
 
-    body.processing .label {
+    body.processing .label,
+    body.confirm-discard .label {
       color: #f59e0b;
+    }
+
+    body.notice .label {
+      color: #60a5fa;
+    }
+
+    body.notice .dot {
+      background: #60a5fa;
     }
 
     body.error .label {
@@ -166,8 +175,11 @@
     let isRecording = false;
     let isStarting = false;
     let discardOnStop = false;
+    let confirmDiscardTimer = null;
     let errorMsg = '';
     let errorTimer = null;
+    let noticeMsg = '';
+    let noticeTimer = null;
     let maxTimer = null;
     let clockInterval = null;
     let secondsElapsed = 0;
@@ -234,8 +246,14 @@
       else if (errorMsg) state = 'error';
       else if (pending) state = 'processing';
       document.body.className = state;
+      if (isRecording && confirmDiscardTimer)
+        document.body.classList.add('confirm-discard');
+      else if (noticeMsg) document.body.classList.add('notice');
 
-      if (isRecording) labelEl.textContent = 'Grabando\u2026';
+      if (isRecording && confirmDiscardTimer)
+        labelEl.textContent = 'Esc otra vez: descartar';
+      else if (noticeMsg) labelEl.textContent = noticeMsg;
+      else if (isRecording) labelEl.textContent = 'Grabando\u2026';
       else if (errorMsg) labelEl.textContent = errorMsg;
       else if (pending)
         labelEl.textContent =
@@ -246,7 +264,7 @@
       badgeEl.textContent = String(pending);
       badgeEl.classList.toggle('hidden', !(isRecording && pending));
 
-      const visible = isRecording || pending > 0 || !!errorMsg;
+      const visible = isRecording || pending > 0 || !!errorMsg || !!noticeMsg;
       if (visible !== lastVisible) {
         lastVisible = visible;
         window.api.setOverlayVisible(visible);
@@ -261,6 +279,16 @@
         errorMsg = '';
         render();
       }, 6000);
+    }
+
+    function showNotice(msg) {
+      clearTimeout(noticeTimer);
+      noticeMsg = msg;
+      render();
+      noticeTimer = setTimeout(() => {
+        noticeMsg = '';
+        render();
+      }, 1500);
     }
 
     function startClock() {
@@ -407,8 +435,14 @@
       }
     }
 
+    function clearConfirmDiscard() {
+      clearTimeout(confirmDiscardTimer);
+      confirmDiscardTimer = null;
+    }
+
     function stopRecording() {
       if (!isRecording) return;
+      clearConfirmDiscard();
       clearTimeout(maxTimer);
       isRecording = false;
       if (mediaRecorder && mediaRecorder.state !== 'inactive')
@@ -418,6 +452,7 @@
 
     function cancelRecording() {
       if (!isRecording) return;
+      clearConfirmDiscard();
       discardOnStop = true;
       clearTimeout(maxTimer);
       isRecording = false;
@@ -433,10 +468,21 @@
 
     window.api.onTriggerRecording(toggleRecording);
     window.api.onWarmupMic(warmUpMic);
+    window.api.onAutoPasteChanged((enabled) => {
+      showNotice(enabled ? 'Pegar auto: S\u00cd' : 'Pegar auto: NO');
+    });
 
     window.api.onTriggerEscape(() => {
       if (isRecording) {
-        cancelRecording();
+        if (confirmDiscardTimer) {
+          cancelRecording();
+          return;
+        }
+        confirmDiscardTimer = setTimeout(() => {
+          confirmDiscardTimer = null;
+          render();
+        }, 2000);
+        render();
         return;
       }
       clearTimeout(errorTimer);

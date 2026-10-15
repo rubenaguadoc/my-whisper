@@ -47,7 +47,7 @@ let resultPending = [];
 let settingsWin = null;
 let tray = null;
 let isQuitting = false;
-let autoPaste = false; // se carga de config en whenReady
+let autoPaste = true; // se carga de config en whenReady
 
 // ── Icono del tray: PNG real construido con zlib + CRC32 ─────────────────
 function crc32(buf) {
@@ -120,15 +120,10 @@ function rebuildTrayMenu() {
     },
     { type: 'separator' },
     {
-      label: 'Pegar automáticamente',
+      label: 'Pegar automáticamente  (Ctrl+F2)',
       type: 'checkbox',
       checked: autoPaste,
-      click: (item) => {
-        autoPaste = item.checked;
-        const config = readConfig();
-        config.autoPaste = autoPaste;
-        writeConfig(config);
-      },
+      click: (item) => setAutoPaste(item.checked),
     },
     { type: 'separator' },
     { label: 'Configuración', click: () => createSettingsWindow() },
@@ -136,6 +131,22 @@ function rebuildTrayMenu() {
     { label: 'Salir', click: () => app.quit() },
   ]);
   tray.setContextMenu(menu);
+}
+
+function setAutoPaste(value) {
+  autoPaste = value;
+  const config = readConfig();
+  config.autoPaste = autoPaste;
+  writeConfig(config);
+  rebuildTrayMenu();
+}
+
+// Se lee al entregar cada resultado, así que afecta también a lo ya grabado
+function toggleAutoPaste() {
+  setAutoPaste(!autoPaste);
+  ensureOverlay();
+  if (overlayReady)
+    overlayWin.webContents.send('auto-paste-changed', autoPaste);
 }
 
 // Windows pierde el flag de "siempre encima" al recomponer el escritorio
@@ -295,11 +306,10 @@ function createSettingsWindow() {
 }
 
 app.whenReady().then(() => {
-  createTray();
-
-  // Cargar preferencias
+  // Cargar preferencias antes del tray para que el checkbox refleje el estado real
   const config = readConfig();
-  autoPaste = !!config.autoPaste;
+  autoPaste = config.autoPaste !== false;
+  createTray();
   if (!config.apiKey) setTimeout(createSettingsWindow, 400);
 
   // Crear el overlay oculto ya: la primera grabación arranca sin esperas
@@ -323,6 +333,7 @@ app.whenReady().then(() => {
 
   // Ctrl+F1 → mostrar overlay y toggle grabación
   globalShortcut.register('Ctrl+F1', toggleOverlayAndRecord);
+  globalShortcut.register('Ctrl+F2', toggleAutoPaste);
 });
 
 app.on('before-quit', () => {

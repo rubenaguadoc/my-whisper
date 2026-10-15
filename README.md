@@ -55,10 +55,11 @@ Genera un archivo `MyWhisper.exe` portable en la carpeta `dist/`. No requiere in
 
 ## Atajos de teclado
 
-| Atajo       | Acción                                                      |
-| ----------- | ----------------------------------------------------------- |
-| **Ctrl+F1** | Iniciar / detener grabación                                 |
-| **Escape**  | Cancelar grabación (descarta el audio) u ocultar el overlay |
+| Atajo       | Acción                                                                                                                       |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| **Ctrl+F1** | Iniciar / detener grabación                                                                                                  |
+| **Ctrl+F2** | Activar / desactivar "Pegar automáticamente" (afecta también a la grabación en curso)                                        |
+| **Escape**  | Pulsado dos veces seguidas (en menos de 2 s): cancelar grabación (descarta el audio). Fuera de grabación: ocultar el overlay |
 
 Funcionan globalmente desde cualquier aplicación, sin necesidad de tener MyWhisper en primer plano.
 

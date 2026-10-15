@@ -32,6 +32,10 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.on('trigger-escape', () => callback());
   },
 
+  onAutoPasteChanged: (callback) => {
+    ipcRenderer.on('auto-paste-changed', (_, enabled) => callback(enabled));
+  },
+
   // Reinicializar el micro (arranque y vuelta de suspensión/hibernación)
   onWarmupMic: (callback) => {
     ipcRenderer.on('warmup-mic', () => callback());
